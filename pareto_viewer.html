@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YAML Dialog Viewer</title>
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <!-- Bulma CSS for styling -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <!-- js-yaml library to parse YAML files -->
+    <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
+    <!-- Chart.js for plotting -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <!-- Custom styles for the chat interface and loader -->
+    <style>
+        .chat-container {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #dbdbdb;
+            border-radius: 6px;
+            padding: 1rem;
+            background-color: #f5f5f5;
+        }
+        .message {
+            margin-bottom: 1rem;
+        }
+        .message .message-body {
+            border-radius: 12px;
+            display: inline-block;
+            max-width: 80%;
+        }
+        .is-customer .message-body {
+            background-color: #e0e0e0;
+            color: #363636;
+        }
+        .is-salesman {
+            text-align: right;
+        }
+        .is-salesman .message-body {
+            background-color: #3273dc;
+            color: #fff;
+        }
+        .emoji {
+            font-size: 1.5rem;
+            margin: 0 0.5rem;
+        }
+        .is-customer .emoji {
+            float: left;
+        }
+        .is-salesman .emoji {
+            float: right;
+        }
+        /* Ensure chart is responsive */
+        .chart-container {
+            position: relative;
+            height: 40vh;
+            width: 100%;
+        }
+        .scenario-info p {
+            margin-bottom: 0.75em;
+        }
+        /* Loading Overlay Styles */
+        .pageloader {
+            position: fixed;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            left: 0;
+            z-index: 9999;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            transition: opacity 0.4s;
+            opacity: 0;
+            pointer-events: none;
+        }
+        .pageloader.is-active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .pageloader .title {
+            margin-top: 1rem;
+            color: #4a4a4a;
+        }
+        .pageloader::after {
+            content: "";
+            display: block;
+            width: 4em;
+            height: 4em;
+            border: 0.4em solid #dbdbdb;
+            border-radius: 50%;
+            border-top-color: #3273dc;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="pageloader is-active">
+        <span class="title">Loading...</span>
+    </div>
+
+    <section class="section">
+        <div class="container">
+            <div class="level">
+                <div class="level-left">
+                    <div class="level-item">
+                        <h1 class="title">Pareto Viewer</h1>
+                    </div>
+                </div>
+                <div class="level-right">
+                    <div class="level-item">
+                        <a href="index.html" class="button is-link">
+                            <span class="icon">
+                                <i class="fas fa-home"></i>
+                            </span>
+                            <span>Back to Home</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section" id="main-content">
+        <div class="container">
+            <!-- Controls -->
+            <div class="box">
+                <h2 class="title is-4">Controls</h2>
+                <div class="columns">
+                    <div class="column">
+                        <div class="field">
+                            <label class="label">1. Select Personality Type</label>
+                            <div class="control">
+                                <div class="select is-fullwidth">
+                                    <select id="personality-selector"></select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="column">
+                        <div class="field">
+                            <label class="label">2. Select Scenario</label>
+                            <div class="control">
+                                <div class="select is-fullwidth">
+                                    <select id="index-selector"></select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="columns is-variable is-8">
+                <!-- Left Column: Chart and Scenario Details -->
+                <div class="column is-half">
+                    <!-- Coefficient vs. Ratings -->
+                    <div class="box">
+                        <h2 class="title is-4">Coefficient vs. Ratings</h2>
+                         <div class="chart-container">
+                            <canvas id="ratings-chart"></canvas>
+                        </div>
+                    </div>
+                     <!-- Scenario Info -->
+                     <div class="box">
+                        <h2 class="title is-4">Scenario Details</h2>
+                        <div id="scenario-display" class="scenario-info">
+                            <!-- Scenario details will be inserted here -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Column: Conversation -->
+                <div class="column is-half">
+                    <!-- Dialog Viewer -->
+                    <div class="box">
+                        <div class="level">
+                            <div class="level-left">
+                                <div class="level-item">
+                                    <h2 class="title is-4">Conversation</h2>
+                                </div>
+                            </div>
+                            <div class="level-right">
+                                <div class="level-item">
+                                    <div class="field has-addons">
+                                         <p class="control">
+                                            <button class="button" id="coeff-down-btn">
+                                                <span>&larr; Coeff</span>
+                                            </button>
+                                        </p>
+                                        <p class="control">
+                                            <button class="button is-static" id="coeff-display">Coeff: 0.0</button>
+                                        </p>
+                                        <p class="control">
+                                            <button class="button" id="coeff-up-btn">
+                                                <span>Coeff &rarr;</span>
+                                            </button>
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="comment-display" class="notification is-info is-light mb-4"></div>
+                        <div class="chat-container" id="dialog-display">
+                            <!-- Dialog messages will be inserted here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- GLOBAL STATE ---
+            let allData = [];
+            let allScenarios = [];
+            let currentScenarioMap = []; // Holds filtered data for the current personality
+            let currentChart = null;
+            let currentPersonality = null;
+            let currentIndex = null; // This will be the local index (0, 1, 2...)
+            let currentCoeffIndex = 0;
+            let currentContents = [];
+
+            // --- DOM ELEMENTS ---
+            const loadingOverlay = document.getElementById('loading-overlay');
+            const mainContent = document.getElementById('main-content');
+            const personalitySelector = document.getElementById('personality-selector');
+            const indexSelector = document.getElementById('index-selector');
+            const scenarioDisplay = document.getElementById('scenario-display');
+            const dialogDisplay = document.getElementById('dialog-display');
+            const commentDisplay = document.getElementById('comment-display');
+            const chartCanvas = document.getElementById('ratings-chart');
+            const coeffUpBtn = document.getElementById('coeff-up-btn');
+            const coeffDownBtn = document.getElementById('coeff-down-btn');
+            const coeffDisplay = document.getElementById('coeff-display');
+
+
+            // --- DATA LOADING ---
+            async function loadAndProcessData() {
+                try {
+                    const [paretoResponse, scenariosResponse] = await Promise.all([
+                        fetch('static/yamls/pareto_filtered.yaml'),
+                        fetch('static/yamls/scenarios.yaml') // Corrected path
+                    ]);
+
+                    if (!paretoResponse.ok) {
+                        throw new Error(`Failed to fetch pareto_filtered.yaml. Status: ${paretoResponse.status}`);
+                    }
+                    if (!scenariosResponse.ok) {
+                        throw new Error(`Failed to fetch scenarios.yaml. Status: ${scenariosResponse.status}`);
+                    }
+
+                    const paretoText = await paretoResponse.text();
+                    const scenariosText = await scenariosResponse.text();
+                    
+                    allData = jsyaml.load(paretoText);
+                    allScenarios = jsyaml.load(scenariosText);
+
+                    if (!allData || !Array.isArray(allData)) {
+                        throw new Error("Parsed content from pareto_filtered.yaml is not a valid list.");
+                    }
+                     if (!allScenarios || !Array.isArray(allScenarios)) {
+                        throw new Error("Parsed content from scenarios.yaml is not a valid list.");
+                    }
+                    
+                    initializeApp();
+
+                } catch (e) {
+                    console.error('Failed to load or parse YAML data:', e);
+                    mainContent.innerHTML = `
+                        <div class="container">
+                            <div class="notification is-danger">
+                                <h2 class="title is-4">Error Loading Data</h2>
+                                <p>Could not load or process required YAML files.</p>
+                                <p><strong>Details:</strong> ${e.message}</p>
+                                <p>Please check the files exist at the specified paths, that they are correctly formatted, and that there are no cross-origin (CORS) issues. Check browser console for more details.</p>
+                            </div>
+                        </div>`;
+                } finally {
+                    loadingOverlay.classList.remove('is-active');
+                }
+            }
+
+
+            // --- INITIALIZATION ---
+            function initializeApp() {
+                populatePersonalitySelector();
+                personalitySelector.dispatchEvent(new Event('change')); // Trigger initial population
+            }
+
+            // --- UI POPULATION ---
+            function populatePersonalitySelector() {
+                const personalities = [...new Set(allData.map(item => item.personality_str))];
+                personalitySelector.innerHTML = personalities
+                    .map(p => `<option value="${p}">${p}</option>`)
+                    .join('');
+            }
+
+            function populateIndexSelector() {
+                currentPersonality = personalitySelector.value;
+                // Create a map of entries for the selected personality
+                currentScenarioMap = allData.filter(item => item.personality_str === currentPersonality);
+                
+                // Populate selector with a simple sequence (0, 1, 2...)
+                indexSelector.innerHTML = currentScenarioMap
+                    .map((_, i) => `<option value="${i}">Scenario ${i + 1}</option>`)
+                    .join('');
+            }
+
+
+            // --- DATA UPDATE & RENDERING ---
+            function updateView() {
+                currentPersonality = personalitySelector.value;
+                currentIndex = indexSelector.value; // This is the local index
+
+                if (currentPersonality === null || currentIndex === null || !currentScenarioMap[currentIndex]) return;
+
+                // 1. Get the specific entry from our filtered map
+                const selectedEntry = currentScenarioMap[currentIndex];
+                
+                // 2. Get the actual scenario index from that entry
+                const scenarioIndex = selectedEntry.index;
+                
+                // 3. Get the scenario details from the scenarios file
+                const scenarioData = allScenarios[scenarioIndex];
+
+                if (!selectedEntry.contents || !scenarioData) {
+                    console.error("No valid entry or scenario found for selection.");
+                    return;
+                }
+                
+                // Render all parts of the UI with the correct data
+                renderScenario(scenarioData);
+                
+                currentContents = selectedEntry.contents.sort((a, b) => a.coeff - b.coeff);
+
+                const initialCoeffIndex = currentContents.findIndex(c => c.coeff === 0.0);
+                if (initialCoeffIndex === -1) {
+                     console.error("Error: An entry with coeff=0 must exist for the initial display.");
+                     dialogDisplay.innerHTML = `<p class="has-text-danger">Error: No content with coeff=0 found.</p>`;
+                     currentCoeffIndex = 0; // Default to first item
+                } else {
+                    currentCoeffIndex = initialCoeffIndex;
+                }
+
+                renderChart(currentContents);
+                renderDialog();
+            }
+
+             // --- SCENARIO RENDERING ---
+            function renderScenario(scenario) {
+                if (!scenario) {
+                    scenarioDisplay.innerHTML = '<p class="has-text-danger">Scenario data not found.</p>';
+                    return;
+                }
+                scenarioDisplay.innerHTML = `
+                    <p><strong>Product:</strong> ${scenario.product || 'N/A'}</p>
+                    <p><strong>Customer Inquiry:</strong> ${scenario.customer_inquiry || 'N/A'}</p>
+                    <p><strong>Benefit 1:</strong> ${scenario.benefit1 || 'N/A'}</p>
+                    <p><strong>Benefit 2:</strong> ${scenario.benefit2 || 'N/A'}</p>
+                    <p><strong>Drawback 1:</strong> ${scenario.drawback1 || 'N/A'}</p>
+                    <p><strong>Drawback 2:</strong> ${scenario.drawback2 || 'N/A'}</p>
+                `;
+            }
+
+            // --- CHART RENDERING ---
+            function renderChart(contents) {
+                const labels = contents.map(c => c.coeff);
+                const honestyData = contents.map(c => c.honesty);
+                const salesData = contents.map(c => c.sales);
+
+                if (currentChart) {
+                    currentChart.destroy();
+                }
+                
+                const ctx = chartCanvas.getContext('2d');
+                currentChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Honesty',
+                            data: honestyData,
+                            borderColor: 'hsl(217, 71%, 53%)',
+                            backgroundColor: 'hsla(217, 71%, 53%, 0.1)',
+                            fill: false,
+                            tension: 0.1
+                        }, {
+                            label: 'Sales Skill',
+                            data: salesData,
+                            borderColor: 'hsl(141, 71%, 48%)',
+                            backgroundColor: 'hsla(141, 71%, 48%, 0.1)',
+                            fill: false,
+                            tension: 0.1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: {
+                                title: { display: true, text: 'Coefficient (coeff)' }
+                            },
+                            y: {
+                                title: { display: true, text: 'Rating (1-10)' },
+                                beginAtZero: true,
+                                max: 10
+                            }
+                        }
+                    }
+                });
+            }
+
+            // --- DIALOG RENDERING ---
+            function renderDialog() {
+                if (currentContents.length === 0 || currentCoeffIndex >= currentContents.length) {
+                    dialogDisplay.innerHTML = '';
+                    commentDisplay.innerHTML = '';
+                    coeffDisplay.textContent = 'Coeff: N/A';
+                    return;
+                }
+
+                const content = currentContents[currentCoeffIndex];
+                
+                coeffDisplay.textContent = `Coeff: ${content.coeff.toFixed(2)}`;
+                commentDisplay.innerHTML = `<strong>Brief Comment:</strong><br>${content.brief_comment.replace(/\n/g, '<br>')}`;
+                dialogDisplay.innerHTML = content.dialog.map(msg => {
+                    const alignment = msg.role === 'salesman' ? 'is-salesman' : 'is-customer';
+                    const emoji = msg.role === 'salesman' ? '🤖' : '🧑';
+                    return `
+                        <div class="message ${alignment}">
+                            <span class="emoji">${emoji}</span>
+                            <div class="message-body">
+                                ${msg.content}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                
+                dialogDisplay.scrollTop = dialogDisplay.scrollHeight;
+            }
+
+            // --- EVENT LISTENERS ---
+            personalitySelector.addEventListener('change', () => {
+                populateIndexSelector();
+                indexSelector.dispatchEvent(new Event('change')); // Cascade update
+            });
+
+            indexSelector.addEventListener('change', () => {
+                updateView();
+            });
+            
+            coeffUpBtn.addEventListener('click', () => {
+                if (currentCoeffIndex < currentContents.length - 1) {
+                    currentCoeffIndex++;
+                    renderDialog();
+                }
+            });
+
+            coeffDownBtn.addEventListener('click', () => {
+                 if (currentCoeffIndex > 0) {
+                    currentCoeffIndex--;
+                    renderDialog();
+                }
+            });
+
+
+            // --- START THE APP ---
+            loadAndProcessData();
+        });
+    </script>
+</body>
+</html>
